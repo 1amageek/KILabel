@@ -152,9 +152,7 @@ NSString * const KILabelLinkKey = @"link";
     }
     
     // Work out the offset of the text in the view
-    CGPoint textOffset;
-    NSRange glyphRange = [_layoutManager glyphRangeForTextContainer:_textContainer];
-    textOffset = [self calcTextOffsetForGlyphRange:glyphRange];
+    CGPoint textOffset = [self calcGlyphsPositionInView];
     
     // Get the touch location and use text offset to convert to text cotainer coords
     location.x -= textOffset.x;
@@ -354,12 +352,13 @@ NSString * const KILabelLinkKey = @"link";
     NSMutableParagraphStyle *paragraph = [[NSMutableParagraphStyle alloc] init];
     paragraph.alignment = self.textAlignment;
     
+    // Create the dictionary
+    
     UIFont *font = self.font;
     if (!font) {
         font = [UIFont systemFontOfSize:14];
     }
     
-    // Create the dictionary
     NSDictionary *attributes = @{NSFontAttributeName : font,
                                  NSForegroundColorAttributeName : color,
                                  NSShadowAttributeName : shadow,
@@ -548,23 +547,23 @@ NSString * const KILabelLinkKey = @"link";
     _textContainer.maximumNumberOfLines = numberOfLines;
     
     // Measure the text with the new state
-    CGRect textBounds;
-    @try
+    CGRect textBounds = [_layoutManager usedRectForTextContainer:_textContainer];
+    
+    // Position the bounds and round up the size for good measure
+    textBounds.origin = bounds.origin;
+    textBounds.size.width = ceil(textBounds.size.width);
+    textBounds.size.height = ceil(textBounds.size.height);
+    
+    if (textBounds.size.height < bounds.size.height)
     {
-        NSRange glyphRange = [_layoutManager glyphRangeForTextContainer:_textContainer];
-        textBounds = [_layoutManager boundingRectForGlyphRange:glyphRange inTextContainer:_textContainer];
-        
-        // Position the bounds and round up the size for good measure
-        textBounds.origin = bounds.origin;
-        textBounds.size.width = ceilf(textBounds.size.width);
-        textBounds.size.height = ceilf(textBounds.size.height);
+        // Take verical alignment into account
+        CGFloat offsetY = (bounds.size.height - textBounds.size.height) / 2.0;
+        textBounds.origin.y += offsetY;
     }
-    @finally
-    {
-        // Restore the old container state before we exit under any circumstances
-        _textContainer.size = savedTextContainerSize;
-        _textContainer.maximumNumberOfLines = savedTextContainerNumberOfLines;
-    }
+    
+    // Restore the old container state before we exit under any circumstances
+    _textContainer.size = savedTextContainerSize;
+    _textContainer.maximumNumberOfLines = savedTextContainerNumberOfLines;
     
     return textBounds;
 }
@@ -576,24 +575,26 @@ NSString * const KILabelLinkKey = @"link";
     // [super drawTextInRect:rect];
     
     // Calculate the offset of the text in the view
-    CGPoint textOffset;
     NSRange glyphRange = [_layoutManager glyphRangeForTextContainer:_textContainer];
-    textOffset = [self calcTextOffsetForGlyphRange:glyphRange];
+    CGPoint glyphsPosition = [self calcGlyphsPositionInView];
     
     // Drawing code
-    [_layoutManager drawBackgroundForGlyphRange:glyphRange atPoint:textOffset];
-    [_layoutManager drawGlyphsForGlyphRange:glyphRange atPoint:textOffset];
+    [_layoutManager drawBackgroundForGlyphRange:glyphRange atPoint:glyphsPosition];
+    [_layoutManager drawGlyphsForGlyphRange:glyphRange atPoint:glyphsPosition];
 }
 
 // Returns the XY offset of the range of glyphs from the view's origin
-- (CGPoint)calcTextOffsetForGlyphRange:(NSRange)glyphRange
+- (CGPoint)calcGlyphsPositionInView
 {
     CGPoint textOffset = CGPointZero;
     
-    CGRect textBounds = [_layoutManager boundingRectForGlyphRange:glyphRange inTextContainer:_textContainer];
-    CGFloat paddingHeight = (self.bounds.size.height - textBounds.size.height) / 2.0f;
-    if (paddingHeight > 0)
+    CGRect textBounds = [_layoutManager usedRectForTextContainer:_textContainer];
+    textBounds.size.width = ceil(textBounds.size.width);
+    textBounds.size.height = ceil(textBounds.size.height);
+    
+    if (textBounds.size.height < self.bounds.size.height)
     {
+        CGFloat paddingHeight = (self.bounds.size.height - textBounds.size.height) / 2.0;
         textOffset.y = paddingHeight;
     }
     
