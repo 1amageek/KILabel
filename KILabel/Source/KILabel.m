@@ -347,6 +347,9 @@ NSString * const KILabelLinkKey = @"link";
     {
         color = self.highlightedTextColor;
     }
+    if (!color) {
+        color = [UIColor whiteColor];
+    }
     
     // Setup paragraph attributes
     NSMutableParagraphStyle *paragraph = [[NSMutableParagraphStyle alloc] init];
