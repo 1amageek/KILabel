@@ -152,7 +152,9 @@ NSString * const KILabelLinkKey = @"link";
     }
     
     // Work out the offset of the text in the view
-    CGPoint textOffset = [self calcGlyphsPositionInView];
+    CGPoint textOffset;
+    NSRange glyphRange = [_layoutManager glyphRangeForTextContainer:_textContainer];
+    textOffset = [self calcTextOffsetForGlyphRange:glyphRange];
     
     // Get the touch location and use text offset to convert to text cotainer coords
     location.x -= textOffset.x;
@@ -352,8 +354,13 @@ NSString * const KILabelLinkKey = @"link";
     NSMutableParagraphStyle *paragraph = [[NSMutableParagraphStyle alloc] init];
     paragraph.alignment = self.textAlignment;
     
+    UIFont *font = self.font;
+    if (!font) {
+        font = [UIFont systemFontOfSize:14];
+    }
+    
     // Create the dictionary
-    NSDictionary *attributes = @{NSFontAttributeName : self.font,
+    NSDictionary *attributes = @{NSFontAttributeName : font,
                                  NSForegroundColorAttributeName : color,
                                  NSShadowAttributeName : shadow,
                                  NSParagraphStyleAttributeName : paragraph,
@@ -417,7 +424,7 @@ NSString * const KILabelLinkKey = @"link";
             [rangesForUserHandles addObject:@{KILabelLinkTypeKey : @(KILinkTypeUserHandle),
                                               KILabelRangeKey : [NSValue valueWithRange:matchRange],
                                               KILabelLinkKey : matchString
-                                            }];
+                                              }];
         }
     }
     
@@ -450,7 +457,7 @@ NSString * const KILabelLinkKey = @"link";
             [rangesForHashtags addObject:@{KILabelLinkTypeKey : @(KILinkTypeHashtag),
                                            KILabelRangeKey : [NSValue valueWithRange:matchRange],
                                            KILabelLinkKey : matchString,
-                                        }];
+                                           }];
         }
     }
     
@@ -489,7 +496,7 @@ NSString * const KILabelLinkKey = @"link";
                 [rangesForURLs addObject:@{KILabelLinkTypeKey : @(KILinkTypeURL),
                                            KILabelRangeKey : [NSValue valueWithRange:matchRange],
                                            KILabelLinkKey : realURL,
-                                        }];
+                                           }];
             }
         }
     }
@@ -505,7 +512,7 @@ NSString * const KILabelLinkKey = @"link";
 - (NSAttributedString *)addLinkAttributesToAttributedString:(NSAttributedString *)string linkRanges:(NSArray *)linkRanges
 {
     NSMutableAttributedString *attributedString = [[NSMutableAttributedString alloc] initWithAttributedString:string];
-
+    
     for (NSDictionary *dictionary in linkRanges)
     {
         NSRange range = [[dictionary objectForKey:KILabelRangeKey] rangeValue];
@@ -541,23 +548,23 @@ NSString * const KILabelLinkKey = @"link";
     _textContainer.maximumNumberOfLines = numberOfLines;
     
     // Measure the text with the new state
-    CGRect textBounds = [_layoutManager usedRectForTextContainer:_textContainer];
-    
-    // Position the bounds and round up the size for good measure
-    textBounds.origin = bounds.origin;
-    textBounds.size.width = ceil(textBounds.size.width);
-    textBounds.size.height = ceil(textBounds.size.height);
-
-    if (textBounds.size.height < bounds.size.height)
+    CGRect textBounds;
+    @try
     {
-        // Take verical alignment into account
-        CGFloat offsetY = (bounds.size.height - textBounds.size.height) / 2.0;
-        textBounds.origin.y += offsetY;
+        NSRange glyphRange = [_layoutManager glyphRangeForTextContainer:_textContainer];
+        textBounds = [_layoutManager boundingRectForGlyphRange:glyphRange inTextContainer:_textContainer];
+        
+        // Position the bounds and round up the size for good measure
+        textBounds.origin = bounds.origin;
+        textBounds.size.width = ceilf(textBounds.size.width);
+        textBounds.size.height = ceilf(textBounds.size.height);
     }
-
-    // Restore the old container state before we exit under any circumstances
-    _textContainer.size = savedTextContainerSize;
-    _textContainer.maximumNumberOfLines = savedTextContainerNumberOfLines;
+    @finally
+    {
+        // Restore the old container state before we exit under any circumstances
+        _textContainer.size = savedTextContainerSize;
+        _textContainer.maximumNumberOfLines = savedTextContainerNumberOfLines;
+    }
     
     return textBounds;
 }
@@ -569,26 +576,24 @@ NSString * const KILabelLinkKey = @"link";
     // [super drawTextInRect:rect];
     
     // Calculate the offset of the text in the view
+    CGPoint textOffset;
     NSRange glyphRange = [_layoutManager glyphRangeForTextContainer:_textContainer];
-    CGPoint glyphsPosition = [self calcGlyphsPositionInView];
+    textOffset = [self calcTextOffsetForGlyphRange:glyphRange];
     
     // Drawing code
-    [_layoutManager drawBackgroundForGlyphRange:glyphRange atPoint:glyphsPosition];
-    [_layoutManager drawGlyphsForGlyphRange:glyphRange atPoint:glyphsPosition];
+    [_layoutManager drawBackgroundForGlyphRange:glyphRange atPoint:textOffset];
+    [_layoutManager drawGlyphsForGlyphRange:glyphRange atPoint:textOffset];
 }
 
 // Returns the XY offset of the range of glyphs from the view's origin
-- (CGPoint)calcGlyphsPositionInView
+- (CGPoint)calcTextOffsetForGlyphRange:(NSRange)glyphRange
 {
     CGPoint textOffset = CGPointZero;
     
-    CGRect textBounds = [_layoutManager usedRectForTextContainer:_textContainer];
-    textBounds.size.width = ceil(textBounds.size.width);
-    textBounds.size.height = ceil(textBounds.size.height);
-    
-    if (textBounds.size.height < self.bounds.size.height)
+    CGRect textBounds = [_layoutManager boundingRectForGlyphRange:glyphRange inTextContainer:_textContainer];
+    CGFloat paddingHeight = (self.bounds.size.height - textBounds.size.height) / 2.0f;
+    if (paddingHeight > 0)
     {
-        CGFloat paddingHeight = (self.bounds.size.height - textBounds.size.height) / 2.0;
         textOffset.y = paddingHeight;
     }
     
@@ -701,26 +706,26 @@ NSString * const KILabelLinkKey = @"link";
 {
     switch (linkType)
     {
-    case KILinkTypeUserHandle:
-        if (_userHandleLinkTapHandler)
-        {
-            _userHandleLinkTapHandler(self, string, range);
-        }
-        break;
-        
-    case KILinkTypeHashtag:
-        if (_hashtagLinkTapHandler)
-        {
-            _hashtagLinkTapHandler(self, string, range);
-        }
-        break;
-        
-    case KILinkTypeURL:
-        if (_urlLinkTapHandler)
-        {
-            _urlLinkTapHandler(self, string, range);
-        }
-        break;
+        case KILinkTypeUserHandle:
+            if (_userHandleLinkTapHandler)
+            {
+                _userHandleLinkTapHandler(self, string, range);
+            }
+            break;
+            
+        case KILinkTypeHashtag:
+            if (_hashtagLinkTapHandler)
+            {
+                _hashtagLinkTapHandler(self, string, range);
+            }
+            break;
+            
+        case KILinkTypeURL:
+            if (_urlLinkTapHandler)
+            {
+                _urlLinkTapHandler(self, string, range);
+            }
+            break;
     }
 }
 
